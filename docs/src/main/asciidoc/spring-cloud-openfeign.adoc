@@ -100,9 +100,13 @@ In this case the client is composed from the components already in `FeignClients
 
 NOTE: `FooConfiguration` does not need to be annotated with `@Configuration`. However, if it is, then take care to exclude it from any `@ComponentScan` that would otherwise include this configuration as it will become the default source for `feign.Decoder`, `feign.Encoder`, `feign.Contract`, etc., when specified. This can be avoided by putting it in a separate, non-overlapping package from any `@ComponentScan` or `@SpringBootApplication`, or it can be explicitly excluded in `@ComponentScan`.
 
+FooConfiguration 不需要用@Configuration 注释。 但是，如果是，请注意将其从任何可能包含此配置的 @ComponentScan 中排除，因为在指定时它将成为 feign.Decoder、feign.Encoder、feign.Contract 等的默认源。 这可以通过将其放在任何@ComponentScan 或@SpringBootApplication 的单独的、不重叠的包中来避免，或者可以在@ComponentScan 中显式排除它。
+
 NOTE: Using `contextId` attribute of the `@FeignClient` annotation in addition to changing the name of
 the `ApplicationContext` ensemble, it will override the alias of the client name
 and it will be used as part of the name of the configuration bean created for that client.
+
+使用 @FeignClient 注释的 contextId 属性除了更改 ApplicationContext 整体的名称外，它将覆盖客户端名称的别名，并将用作为该客户端创建的配置 bean 名称的一部分。
 
 WARNING: Previously, using the `url` attribute, did not require the `name` attribute. Using `name` is now required.
 

@@ -4,14 +4,22 @@
 		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>spring-cloud-openfeign</artifactId>
-	<version>4.0.0-SNAPSHOT</version>
+	<version>3.1.1</version>
 	<packaging>pom</packaging>
 	<name>Spring Cloud OpenFeign</name>
 	<description>Spring Cloud OpenFeign</description>
 	<parent>
 		<groupId>org.springframework.cloud</groupId>
 		<artifactId>spring-cloud-build</artifactId>
-		<version>4.0.0-SNAPSHOT</version>
+		<!--将版本 4.0.0-SNAPSHOT 改为 3.1.1，因为这里指定了parent项目的版本为4.0.0-snapshot，但是这个parent项目的4.0快照版本在 maven aliyun
+		 中并没有正式发布，因此4.0快照版本不可用-->
+		<version>3.1.1</version>
+		<!--问题 ，为什么下面 可以省略 对parent的 父pom文件的路径配置？
+		因为Maven假设父pom在本地仓库可用，或者在当前项目的父目录 (../pom.xml)中可用。也就是意味着这两种情况下可以不配置relativePath。
+		relativePath的默认值是../pom.xml 也就是说，maven默认父pom在上一层目录下， 当项目构建的时候，maven会首先根据relativePath检查父pom。
+		如果找不到，再从本地仓库查找。
+
+		-->
 		<relativePath/>
 	</parent>
 	<scm>
@@ -26,7 +34,7 @@
 	<properties>
 		<main.basedir>${basedir}</main.basedir>
 		<jackson.version>2.11.3</jackson.version>
-		<spring-cloud-commons.version>4.0.0-SNAPSHOT</spring-cloud-commons.version>
+		<spring-cloud-commons.version>3.1.1</spring-cloud-commons.version>
 
 		<!-- Plugin versions -->
 		<maven-eclipse-plugin.version>2.10</maven-eclipse-plugin.version>

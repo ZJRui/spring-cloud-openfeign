@@ -75,6 +75,11 @@ import static feign.form.ContentType.MULTIPART;
  */
 @Configuration(proxyBeanMethods = false)
 public class FeignClientsConfiguration {
+	/**
+	 * Spring Cloud 使用 FeignClientsConfiguration 为每个命名客户端按需
+	 * 创建一个新的集成作为 ApplicationContext。 这包含（除其他外）一个 feign.Decoder、
+	 * 一个 feign.Encoder 和一个 feign.Contract。 可以使用 @FeignClient 注释的 contextId 属性覆盖该集合的名称。
+	 */
 
 	@Autowired
 	private ObjectFactory<HttpMessageConverters> messageConverters;
@@ -156,6 +161,10 @@ public class FeignClientsConfiguration {
 		return conversionService;
 	}
 
+	/**
+	 * A bean of Retryer.NEVER_RETRY with the type Retryer is created by default, which will disable retrying.
+	 * @return
+	 */
 	@Bean
 	@ConditionalOnMissingBean
 	public Retryer feignRetryer() {

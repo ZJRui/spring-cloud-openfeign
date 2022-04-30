@@ -341,6 +341,10 @@ public class FeignClientFactoryBean
 	}
 
 	protected <T> T get(FeignContext context, Class<T> type) {
+		/**
+		 * getInstance 内部 ：  AnnotationConfigApplicationContext context = this.getContext(name);
+		 * 也就是说contextId被作为了  AnnotationConfigApplicationContext的contextname
+		 */
 		T instance = context.getInstance(contextId, type);
 		if (instance == null) {
 			throw new IllegalStateException("No bean found of type " + type + " for " + contextId);
@@ -376,6 +380,10 @@ public class FeignClientFactoryBean
 			builder.client(client);
 			applyBuildCustomizers(context, builder);
 			Targeter targeter = get(context, Targeter.class);
+			/**
+			 * target.target实现代理
+			 *
+			 */
 			return targeter.target(this, builder, context, target);
 		}
 
@@ -408,8 +416,32 @@ public class FeignClientFactoryBean
 	 * information
 	 */
 	<T> T getTarget() {
+		/**
+		 *在FeignAutoConfiguration中注入
+		 * 首先FeignContext context = applicationContext.getBean(FeignContext.class);
+		 * 拿到feign环境，bean定义是在org.springframework.cloud.openfeign.FeignAutoConfiguration,
+		 * 核心this.configurations.put(client.getName(), client) 是为每个feign维护了一个环境，放在map中。
+		 * 每个feign实例都能从feignContext里拿到独立的spring容器。T instance = context.getInstance(this.name, type);
+		 * 这种，name就是feignclient注解的 “servicexxxx”。
+		 */
 		FeignContext context = beanFactory != null ? beanFactory.getBean(FeignContext.class)
 				: applicationContext.getBean(FeignContext.class);
+		/**
+		 * 在 FeignClientFactoryBean 创建 Bean 的时候，它先从 applicationContext 里面找到已经构建好的 feignContext
+		 * 初始化一个 FeignBuilder，FeignBuilder 会利用 context 里面包含的对应的 configuration 指定的 bean，获取指定的
+		 * 类，比如 decoder，encoder，retryer，errorDecoder。然后再去寻找 context 中的 Client bean。这个 Client Bean 是什么呢
+		 * ？如果当前路径里面有 Ribbon，那么 Spring Boot 启动时就会创建一个 LoadBalancerFeignClient，如果没有，FeignAutoCon
+		 * figuration 里面也会自己去创建 ApacheHttpClient 或者 OKHttpClient。FeignBuilder 会拿这个 client 配到自己里面。
+		 *
+		 * ------------
+		 * Feign.Builder builder = get(context, Feign.Builder.class)，结合环境生成一个builder，
+		 *
+		 * 这个builder也是从spring容器拿的，FeignClientsConfiguration中有两个，一个hystrix的，一个retryer(默认)的。
+		 * 从feignContext里拿到servicename对应的容器，再根据类型拿到Encoder、Decoder、Contract设置builder。这些bean
+		 * 都在FeignClientsConfiguraiton中定义：SpringEncoder、ResponseEntityDecoder、SpringMvcContract configureFeign（），
+		 * 把application.yml的属性配置进builder中，
+		 *
+		 */
 		Feign.Builder builder = feign(context);
 
 		if (!StringUtils.hasText(url)) {
@@ -424,6 +456,10 @@ public class FeignClientFactoryBean
 				url = name;
 			}
 			url += cleanPath();
+			/**
+			 * 核心，处理url后，手动写一个HardCoudeTarget,包含服务名称、接口类名、url，调用loadBalance（target），
+			 * 在这里面通过容器拿到一个Client，client定义在DefaultFeignLoadBalancedConfiguration，实际类型是LoadBalancerFeignClient。
+			 */
 			return (T) loadBalance(builder, context, new HardCodedTarget<>(type, name, url));
 		}
 		if (StringUtils.hasText(url) && !url.startsWith("http")) {

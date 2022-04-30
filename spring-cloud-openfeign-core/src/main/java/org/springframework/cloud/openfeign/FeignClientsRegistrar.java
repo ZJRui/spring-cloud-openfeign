@@ -148,11 +148,24 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 	@Override
 	public void registerBeanDefinitions(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
 		registerDefaultConfiguration(metadata, registry);
+		/**
+		 * 负责注册 FeignClient，分为以下几步
+		 *
+		 * 找到 basePackage 下面所有包含了 FeignClient 注解的类
+		 * 读取类上面的 FeignClient 注解参数
+		 * 如果该注解包括了 configuration 参数，则先注册 configuration 所指定的类。这个类也是包装在
+		 * FeignClientSpecification 里面的，也就是 bean 的类型其实是 FeignClientSpecification，在 FeignClient 上指定
+		 * 的 configuration 类是它的一个属性。
+		 * 注册该注解了 FeignClient 的接口，生成 BeanDefinition 时是以 FeignClientFactoryBean 作为对象创建的，
+		 * 而使用了 FeignClient 注解的接口是作为该 Bean 的一个属性，同时，对于 FeignClient 注解配置的参数，比如 fallback 等都
+		 * 一并作为参数放入 BeanDefinition 中。注意，configuration 没有传进去
+		 *
+		 */
 		registerFeignClients(metadata, registry);
 	}
 
 	private void registerDefaultConfiguration(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
-		Map<String, Object> defaultAttrs = metadata.getAnnotationAttributes(EnableFeignClients.class.getName(), true);
+		Map<String, Object> defaultAttrs = metadata.getAnnotationAttributes(org.springframework.cloud.openfeign.EnableFeignClients.class.getName(), true);
 
 		if (defaultAttrs != null && defaultAttrs.containsKey("defaultConfiguration")) {
 			String name;
@@ -162,6 +175,9 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 			else {
 				name = "default." + metadata.getClassName();
 			}
+			/**
+			 *  拿到@EnableFeignClients的属性冰注册配置bean,
+			 */
 			registerClientConfiguration(registry, name, defaultAttrs.get("defaultConfiguration"));
 		}
 	}
@@ -169,12 +185,12 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 	public void registerFeignClients(AnnotationMetadata metadata, BeanDefinitionRegistry registry) {
 
 		LinkedHashSet<BeanDefinition> candidateComponents = new LinkedHashSet<>();
-		Map<String, Object> attrs = metadata.getAnnotationAttributes(EnableFeignClients.class.getName());
+		Map<String, Object> attrs = metadata.getAnnotationAttributes(org.springframework.cloud.openfeign.EnableFeignClients.class.getName());
 		final Class<?>[] clients = attrs == null ? null : (Class<?>[]) attrs.get("clients");
 		if (clients == null || clients.length == 0) {
 			ClassPathScanningCandidateComponentProvider scanner = getScanner();
 			scanner.setResourceLoader(this.resourceLoader);
-			scanner.addIncludeFilter(new AnnotationTypeFilter(FeignClient.class));
+			scanner.addIncludeFilter(new AnnotationTypeFilter(org.springframework.cloud.openfeign.FeignClient.class));
 			Set<String> basePackages = getBasePackages(metadata);
 			for (String basePackage : basePackages) {
 				candidateComponents.addAll(scanner.findCandidateComponents(basePackage));
@@ -194,9 +210,17 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 				Assert.isTrue(annotationMetadata.isInterface(), "@FeignClient can only be specified on an interface");
 
 				Map<String, Object> attributes = annotationMetadata
-						.getAnnotationAttributes(FeignClient.class.getCanonicalName());
+						.getAnnotationAttributes(org.springframework.cloud.openfeign.FeignClient.class.getCanonicalName());
 
+				/**
+				 * 在注册Feign Client Configuration的时候需要一个名称，名称是通过getClientName方法获取的：
+				 *可以看到如果配置了contextId就会用contextId，如果没有配置就会去value然后是name最后是serviceId。默认都没有配置，
+				 * 当出现一个服务有多个Feign Client的时候就会报错了。
+				 */
 				String name = getClientName(attributes);
+				/**
+				 * 获取 FeignClient注解中的Configuration ，这个configuration被注册为一个 BeanDefinition，name是 clientName.FeignClientSpecification
+				 */
 				registerClientConfiguration(registry, name, attributes.get("configuration"));
 
 				registerFeignClient(registry, annotationMetadata, attributes);
@@ -210,11 +234,52 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 		Class clazz = ClassUtils.resolveClassName(className, null);
 		ConfigurableBeanFactory beanFactory = registry instanceof ConfigurableBeanFactory
 				? (ConfigurableBeanFactory) registry : null;
+		/**
+		 *
+		 * 比如我们有个user服务，但user服务中有很多个接口，我们不想将所有的调用接口都定义在一个类中，比如：
+		 *
+		 * Client 1
+		 *
+		 * @FeignClient(name = "optimization-user")
+		 * public interface UserRemoteClient {
+		 *        @GetMapping("/user/get")
+		 *    public User getUser(@RequestParam("id") int id);
+		 * }
+		 * Client 2
+		 *
+		 * @FeignClient(name = "optimization-user")
+		 * public interface UserRemoteClient2 {
+		 *    @GetMapping("/user2/get")
+		 *    public User getUser(@RequestParam("id") int id);
+		 * }
+		 * 这种情况下启动就会报错了，因为Bean的名称冲突了，具体错误如下：
+		 *
+		 * Description:
+		 * The bean 'optimization-user.FeignClientSpecification', defined in null, could not be registered.
+		 * A bean with that name has already been defined in null and overriding is disabled.
+		 * Action:
+		 * Consider renaming one of the beans or enabling overriding by setting spring.main.allow-bean-definition-overriding=true
+		 * 解决方案可以增加下面的配置，作用是允许出现beanName一样的BeanDefinition。
+		 *spring.main.allow-bean-definition-overriding=true
+		 * 另一种解决方案就是为每个Client手动指定不同的contextId，这样就不会冲突了。
+		 *
+		 *
+
+		 */
 		String contextId = getContextId(beanFactory, attributes);
+		/**
+		 * serviceId -name -value
+		 */
 		String name = getName(attributes);
-		FeignClientFactoryBean factoryBean = new FeignClientFactoryBean();
+		org.springframework.cloud.openfeign.FeignClientFactoryBean factoryBean =
+			new org.springframework.cloud.openfeign.FeignClientFactoryBean();
 		factoryBean.setBeanFactory(beanFactory);
 		factoryBean.setName(name);
+		/**
+		 * 这个contextId非常重要.
+		 * 在 org.springframework.cloud.openfeign.FeignClientFactoryBean#getObject() 中被当做contextName  寻找AnnotationConfigApplicationContext
+		 *
+		 */
 		factoryBean.setContextId(contextId);
 		factoryBean.setType(clazz);
 		factoryBean.setRefreshableClient(isClientRefreshEnabled());
@@ -247,6 +312,10 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 
 		beanDefinition.setPrimary(primary);
 
+		/**
+		 * 注册FeignClient中，contextId会作为Client 别名的一部分，如果配置了qualifier优先用qualifier作为别名。
+		 *
+		 */
 		String[] qualifiers = getQualifiers(attributes);
 		if (ObjectUtils.isEmpty(qualifiers)) {
 			qualifiers = new String[] { contextId + "FeignClient" };
@@ -283,6 +352,9 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 	}
 
 	private String getContextId(ConfigurableBeanFactory beanFactory, Map<String, Object> attributes) {
+		/**
+		 * 如果@FeignClient注解中指定了ContextId
+		 */
 		String contextId = (String) attributes.get("contextId");
 		if (!StringUtils.hasText(contextId)) {
 			return getName(attributes);
@@ -338,7 +410,7 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 
 	protected Set<String> getBasePackages(AnnotationMetadata importingClassMetadata) {
 		Map<String, Object> attributes = importingClassMetadata
-				.getAnnotationAttributes(EnableFeignClients.class.getCanonicalName());
+				.getAnnotationAttributes(org.springframework.cloud.openfeign.EnableFeignClients.class.getCanonicalName());
 
 		Set<String> basePackages = new HashSet<>();
 		for (String pkg : (String[]) attributes.get("value")) {
@@ -403,14 +475,18 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 		}
 
 		throw new IllegalStateException(
-				"Either 'name' or 'value' must be provided in @" + FeignClient.class.getSimpleName());
+				"Either 'name' or 'value' must be provided in @" + org.springframework.cloud.openfeign.FeignClient.class.getSimpleName());
 	}
 
 	private void registerClientConfiguration(BeanDefinitionRegistry registry, Object name, Object configuration) {
-		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(FeignClientSpecification.class);
+
+		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(org.springframework.cloud.openfeign.FeignClientSpecification.class);
 		builder.addConstructorArgValue(name);
 		builder.addConstructorArgValue(configuration);
-		registry.registerBeanDefinition(name + "." + FeignClientSpecification.class.getSimpleName(),
+		/**
+		 * 如果配置了contextId，这里的name就是contextId，也就是contextId作为了配置名称的一部分
+		 */
+		registry.registerBeanDefinition(name + "." + org.springframework.cloud.openfeign.FeignClientSpecification.class.getSimpleName(),
 				builder.getBeanDefinition());
 	}
 
@@ -429,7 +505,7 @@ class FeignClientsRegistrar implements ImportBeanDefinitionRegistrar, ResourceLo
 		if (isClientRefreshEnabled()) {
 			String beanName = Request.Options.class.getCanonicalName() + "-" + contextId;
 			BeanDefinitionBuilder definitionBuilder = BeanDefinitionBuilder
-					.genericBeanDefinition(OptionsFactoryBean.class);
+					.genericBeanDefinition(org.springframework.cloud.openfeign.OptionsFactoryBean.class);
 			definitionBuilder.setScope("refresh");
 			definitionBuilder.addPropertyValue("contextId", contextId);
 			BeanDefinitionHolder definitionHolder = new BeanDefinitionHolder(definitionBuilder.getBeanDefinition(),
